@@ -51,10 +51,12 @@ python gui.py
 ## 🛠️ Usage
 
 1. Enter the target website URL (e.g. `https://example.com`)
-2. Set the crawl depth (default is 3)
+2. Select the vulnerability type
 3. Click **"🚀 Start Scan"**
 4. View results filtered by vulnerability type
 5. Click **"💾 Save Results"** to export to Pdf
+6. Click **"🛠️ Scan Open Ports"** to scan for open ports
+7. Click **"💡 Cyber Tip"** to view some CyberSecurity tips
 
 ---
 

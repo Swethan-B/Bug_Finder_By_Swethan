@@ -1,234 +1,241 @@
 import tkinter as tk
-from tkinter import ttk, scrolledtext, messagebox, filedialog
+from tkinter import ttk, filedialog, messagebox
 from scanner import WebSecurityScanner
 from fpdf import FPDF
-from concurrent.futures import ThreadPoolExecutor
 import threading
 import random
+import json
 
-class ScannerApp:
+class BugFinderGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Scanner")
-        self.root.geometry("820x700")
-        self.root.configure(bg="#f0f4ff")
+        self.root.title("🐞 Bug Finder By Swethan")
+        self.root.geometry("1080x850")
+        self.root.configure(bg="#f5f5f5")
 
-        self.main_frame = tk.Frame(root, bg="#f0f4ff")
-        self.main_frame.pack(fill="both", expand=True)
+        self.vuln_filter = tk.StringVar(value="All")
+        self.report_format = tk.StringVar(value="PDF")
+        self.last_results = []
 
-        self.banner = tk.Frame(self.main_frame, bg="#6a5acd")
-        self.banner.pack(fill="x")
-        tk.Label(self.banner, text="🕷️ BUG FINDER BY SWETHAN 🔍", font=("Comic Sans MS", 20, "bold"), bg="#6a5acd", fg="white").pack(pady=10)
+        self.setup_style()
+        self.setup_widgets()
 
-        ttk.Label(self.main_frame, text="🌐 Enter a website to scan:", background="#f0f4ff").pack(pady=(20, 5))
-        self.url_entry = ttk.Entry(self.main_frame, width=80, font=("Segoe UI", 10))
-        self.url_entry.pack(pady=5)
+    def setup_style(self):
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure("TLabel", background="#f5f5f5", font=("Segoe UI", 10))
+        style.configure("TButton", font=("Segoe UI", 10, "bold"), padding=6)
+        style.configure("TFrame", background="#f5f5f5")
+        style.configure("Custom.TCombobox",
+                        fieldbackground="white", background="#e0f0ff",
+                        foreground="#000000", borderwidth=1, relief="solid")
+        style.map("Custom.TCombobox",
+                  fieldbackground=[("readonly", "#d0ebff")],
+                  background=[("readonly", "#d0ebff")],
+                  foreground=[("readonly", "#000000")])
 
-        self.toggle_frame = tk.Frame(self.main_frame, bg="#f0f4ff")
-        self.toggle_frame.pack(pady=10)
-        ttk.Label(self.toggle_frame, text="🎛️ Select vulnerability types to scan:", background="#f0f4ff").pack()
+    def setup_widgets(self):
+        ttk.Label(self.root, text="🐞 Bug Finder By Swethan", font=("Segoe UI", 20, "bold"),
+                  background="#f5f5f5", foreground="#007acc").pack(pady=15)
 
-        self.vuln_options = [
-            "SQL Injection", "Cross-Site Scripting (XSS)", "Sensitive Information Exposure",
-            "Open Redirect", "Command Injection", "Directory Traversal", "Clickjacking",
-            "Insecure Cookies", "Exposed Debug Info", "Admin Panel Exposure", "HTML Comment Disclosure"
-        ]
+        form_frame = ttk.Frame(self.root)
+        form_frame.pack()
 
-        self.selected_vulns = set()
-        self.button_refs = {}
+        for i in range(6): form_frame.columnconfigure(i, weight=1)
 
-        grid = tk.Frame(self.toggle_frame, bg="#f0f4ff")
-        grid.pack()
+        ttk.Label(form_frame, text="🌐 Target URL:").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+        self.url_entry = ttk.Entry(form_frame, width=85)
+        self.url_entry.grid(row=0, column=1, columnspan=5, sticky="ew", padx=5, pady=5)
 
-        for i, vuln in enumerate(["All"] + self.vuln_options):
-            btn = tk.Button(
-                grid, text=vuln, width=22, relief="raised", bg="#ffffff",
-                command=lambda v=vuln: self.toggle_vuln(v)
-            )
-            btn.grid(row=i // 3, column=i % 3, padx=5, pady=5)
-            self.button_refs[vuln] = btn
+        ttk.Label(form_frame, text="📏 Depth:").grid(row=1, column=0, sticky="e", padx=5, pady=5)
+        self.depth_entry = ttk.Entry(form_frame, width=10)
+        self.depth_entry.insert(0, "2")
+        self.depth_entry.grid(row=1, column=1, padx=5, pady=5)
 
-        self.button_frame = tk.Frame(self.main_frame, bg="#f0f4ff")
-        self.button_frame.pack(pady=10)
+        ttk.Label(form_frame, text="🗂️ Format:").grid(row=1, column=2, sticky="e", padx=5, pady=5)
+        self.format_combo = ttk.Combobox(form_frame, textvariable=self.report_format,
+                                         values=["PDF", "JSON"], width=10,
+                                         state="readonly", style="Custom.TCombobox")
+        self.format_combo.grid(row=1, column=3, padx=5, pady=5)
 
-        self.scan_button = tk.Button(self.button_frame, text="🚀 Start Scan", command=self.start_scan, font=("Segoe UI", 10, "bold"))
-        self.scan_button.pack(side=tk.LEFT, padx=10)
+        ttk.Label(form_frame, text="🎯 Filter:").grid(row=1, column=4, sticky="e", padx=5, pady=5)
+        self.filter_combo = ttk.Combobox(form_frame, textvariable=self.vuln_filter, width=30,
+                                         values=[
+                                             "All", "SQL Injection", "Cross-Site Scripting (XSS)",
+                                             "Command Injection", "Open Redirect",
+                                             "Sensitive Info Exposure", "CSRF Vulnerability",
+                                             "Clickjacking", "Admin Panel Exposure",
+                                             "HTML Comment Disclosure", "Open Ports"
+                                         ],
+                                         state="readonly", style="Custom.TCombobox")
+        self.filter_combo.grid(row=1, column=5, padx=5, pady=5)
+        self.filter_combo.set("All")
 
-        self.port_button = tk.Button(self.button_frame, text="🛠️ Scan Open Ports", command=self.start_port_scan, font=("Segoe UI", 10, "bold"))
-        self.port_button.pack(side=tk.LEFT, padx=10)
+        button_frame = ttk.Frame(self.root)
+        button_frame.pack(pady=10)
+        ttk.Button(button_frame, text="🚀 Start Scan", command=self.start_scan).pack(side=tk.LEFT, padx=10)
+        ttk.Button(button_frame, text="💾 Save Results", command=self.save_results).pack(side=tk.LEFT, padx=10)
+        ttk.Button(button_frame, text="🛠️ Scan Ports", command=self.scan_ports_only).pack(side=tk.LEFT, padx=10)
+        ttk.Button(button_frame, text="💡 Cyber Tip", command=self.show_tips).pack(side=tk.LEFT, padx=10)
 
-        self.pdf_button = tk.Button(self.button_frame, text="📝 Export PDF Report", command=self.export_pdf_report, font=("Segoe UI", 10, "bold"), state=tk.DISABLED)
-        self.pdf_button.pack(side=tk.LEFT, padx=10)
+        output_frame = ttk.Frame(self.root)
+        output_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+        output_frame.configure(height=500)
 
-        self.tip_button = tk.Button(self.button_frame, text="💡 Cyber Tip", command=self.show_cyber_tip, font=("Segoe UI", 10, "bold"))
-        self.tip_button.pack(side=tk.LEFT, padx=10)
+        self.output_text = tk.Text(output_frame, wrap=tk.WORD, font=("Consolas", 11),
+                                   bg="#ffffff", fg="#000000", insertbackground="black")
+        self.output_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        self.result_box = scrolledtext.ScrolledText(self.main_frame, wrap=tk.WORD, width=95, height=20, font=("Courier New", 10))
-        self.result_box.pack(padx=15, pady=10)
-        self.result_box.tag_configure('header', font=('Segoe UI', 10, 'bold'), foreground='#6a5acd')
-
-        self.status_frame = tk.Frame(self.main_frame, bg="#f0f4ff")
-        self.status_frame.pack(pady=5)
-
-        self.scan_status_label = tk.Label(self.status_frame, text="", font=("Segoe UI", 11, "bold"), bg="#f0f4ff")
-        self.scan_status_label.pack()
-        self.bug_count_label = tk.Label(self.status_frame, text="", font=("Segoe UI", 11), bg="#f0f4ff", fg="#6a5acd")
-        self.bug_count_label.pack()
-
-        self.vulnerabilities = []
-
-    def toggle_vuln(self, vuln):
-        if vuln == "All":
-            self.selected_vulns = set(self.vuln_options) if len(self.selected_vulns) < len(self.vuln_options) else set()
-        else:
-            self.selected_vulns.symmetric_difference_update([vuln])
-
-        for v in self.vuln_options:
-            self.button_refs[v].config(bg="#cce5ff" if v in self.selected_vulns else "#ffffff")
-        self.button_refs["All"].config(bg="#cce5ff" if len(self.selected_vulns) == len(self.vuln_options) else "#ffffff")
+        self.scrollbar = ttk.Scrollbar(output_frame, orient="vertical", command=self.output_text.yview)
+        self.output_text.configure(yscrollcommand=self.scrollbar.set)
+        self.scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
     def start_scan(self):
+        threading.Thread(target=self._scan).start()
+
+    def _scan(self):
         url = self.url_entry.get().strip()
+        try:
+            depth = int(self.depth_entry.get().strip())
+        except:
+            messagebox.showerror("⚠️ Error", "Invalid crawl depth.")
+            return
+
         if not url:
-            messagebox.showerror("❗ Input Error", "Please enter a URL.")
-            return
-        if not self.selected_vulns:
-            messagebox.showerror("❗ Selection Error", "Please select at least one vulnerability type.")
+            messagebox.showerror("⚠️ Error", "Please enter a valid URL.")
             return
 
-        self.result_box.delete(1.0, tk.END)
-        self.result_box.insert(tk.END, f"🔍 Starting scan on: {url}\n\n")
-        self.scan_status_label.config(text="")
-        self.bug_count_label.config(text="")
-        self.pdf_button.config(state=tk.DISABLED)
-        threading.Thread(target=self.run_scanner, args=(url, list(self.selected_vulns)), daemon=True).start()
+        self.output_text.delete(1.0, tk.END)
+        self.output_text.insert(tk.END, f"🔍 Scanning {url} with depth {depth}...\n\n")
+        self.root.update()
 
-    def start_port_scan(self):
-        url = self.url_entry.get().strip()
-        if not url:
-            messagebox.showerror("❗ Input Error", "Please enter a URL.")
-            return
+        scanner = WebSecurityScanner(url, depth)
+        self.last_results = scanner.scan()
 
-        self.result_box.insert(tk.END, f"\n🛠️ Starting port scan on: {url}\n")
-        threading.Thread(target=self.run_port_scan, args=(url,), daemon=True).start()
-
-    def run_port_scan(self, url):
-        scanner = WebSecurityScanner(url)
-        scanner.scan_ports()
-        self.vulnerabilities.extend(scanner.vulnerabilities)
-        self.pdf_button.config(state=tk.NORMAL)
-        self.display_results()
-
-    def run_scanner(self, url, selected_types):
-        scanner = WebSecurityScanner(url)
-        scanner.crawl(url)
-
-        scan_map = {
-            "SQL Injection": scanner.check_sql_injection,
-            "Cross-Site Scripting (XSS)": scanner.check_xss,
-            "Sensitive Information Exposure": scanner.check_sensitive_info,
-            "Open Redirect": scanner.check_open_redirect,
-            "Command Injection": scanner.check_command_injection,
-            "Directory Traversal": scanner.check_directory_traversal,
-            "Clickjacking": scanner.check_clickjacking,
-            "Insecure Cookies": scanner.check_insecure_cookies,
-            "Exposed Debug Info": scanner.check_debug_info,
-            "Admin Panel Exposure": scanner.check_admin_paths,
-            "HTML Comment Disclosure": scanner.check_html_comments
-        }
-
-        with ThreadPoolExecutor(max_workers=8) as executor:
-            for vuln_type in selected_types:
-                func = scan_map.get(vuln_type)
-                if func:
-                    if vuln_type == "Admin Panel Exposure":
-                        executor.submit(func)
-                    else:
-                        for link in scanner.visited_urls:
-                            executor.submit(func, link)
-
-        self.vulnerabilities = scanner.vulnerabilities
-        self.scan_status_label.config(text="✅ Scan Completed!")
-        self.bug_count_label.config(text=f"🐞 Total Bugs Found: {len(self.vulnerabilities)}")
-        self.pdf_button.config(state=tk.NORMAL)
+        self.output_text.insert(tk.END, f"\n✅ Scan complete. {len(self.last_results)} vulnerabilities found.\n")
         self.display_results()
 
     def display_results(self):
-        self.result_box.insert(tk.END, f"🐞 Total Bugs Found: {len(self.vulnerabilities)}\n\n")
-        if not self.vulnerabilities:
-            self.result_box.insert(tk.END, "🎉 No vulnerabilities found.\n")
+        self.output_text.insert(tk.END, f"\n🎯 Filter: {self.vuln_filter.get()}\n\n")
+        self.output_text.insert(tk.END, "━" * 80 + "\n")
+
+        selected_type = self.vuln_filter.get().strip().lower()
+        count = 0
+
+        for vuln in self.last_results:
+            vuln_type = vuln.get("type", "").strip().lower()
+            if selected_type != "all" and selected_type not in vuln_type:
+                continue
+
+            count += 1
+            self.output_text.insert(tk.END, f"🛑 Type: {vuln.get('type', 'N/A')}\n")
+            self.output_text.insert(tk.END, f"🌍 URL: {vuln.get('url', 'N/A')}\n")
+
+            for key in ["parameter", "payload", "info_type", "match", "cookie", "ports", "status_code", "comment"]:
+                if key in vuln:
+                    val = vuln[key]
+                    value = ", ".join(str(v) for v in val) if isinstance(val, list) else str(val)
+                    self.output_text.insert(tk.END, f"📌 {key.capitalize()}: {value}\n")
+
+            self.output_text.insert(tk.END, "━" * 80 + "\n")
+
+        if count == 0:
+            self.output_text.insert(tk.END, "\n⚠️ No results for this filter.\n")
+
+    def save_results(self):
+        if not self.last_results:
+            messagebox.showinfo("ℹ️ Info", "No results to save.")
             return
 
-        grouped = {}
-        for v in self.vulnerabilities:
-            grouped.setdefault(v["type"], []).append(v)
-
-        for vtype, items in grouped.items():
-            self.result_box.insert(tk.END, f"🔒 === {vtype} ===\n", 'header')
-            for v in items:
-                self.result_box.insert(tk.END, f"🔗 URL: {v.get('url', '')}\n")
-                for key in ["parameter", "payload", "match", "info_type", "comment", "cookie", "status_code", "ports"]:
-                    if v.get(key):
-                        if isinstance(v[key], list):
-                            self.result_box.insert(tk.END, f"{key.capitalize():<12}: {', '.join(str(p) for p in v[key])}\n")
-                        else:
-                            self.result_box.insert(tk.END, f"{key.capitalize():<12}: {v[key]}\n")
-                self.result_box.insert(tk.END, "\n")
-            self.result_box.insert(tk.END, "----------------------------------------\n\n")
-
-    def export_pdf_report(self):
-        if not self.vulnerabilities:
-            messagebox.showinfo("📢 Heads Up", "No vulnerabilities to export.")
-            return
-
-        file_path = filedialog.asksaveasfilename(defaultextension=".pdf", filetypes=[("PDF files", "*.pdf")], title="Save PDF Report")
+        format_selected = self.report_format.get()
+        file_ext = ".pdf" if format_selected == "PDF" else ".json"
+        file_path = filedialog.asksaveasfilename(defaultextension=file_ext,
+                                                 filetypes=[("PDF", "*.pdf")] if file_ext == ".pdf" else [("JSON", "*.json")])
         if not file_path:
             return
 
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", "B", 16)
-        pdf.cell(200, 10, "BUG FINDER REPORT", ln=True, align="C")
-        pdf.set_font("Arial", "", 12)
-        pdf.ln(10)
-        pdf.cell(200, 10, f"Total Bugs Found: {len(self.vulnerabilities)}", ln=True)
+        if format_selected == "PDF":
+        
+                try:
+                    pdf = FPDF()
+                    pdf.add_page()
+                    pdf.set_font("Arial", size=12)
+                    pdf.set_title("Bug Finder Report")
+                    pdf.cell(200, 10, txt="Bug Finder By Swethan - Report", ln=True, align='C')
+                    pdf.ln(10)
 
-        grouped = {}
-        for v in self.vulnerabilities:
-            grouped.setdefault(v["type"], []).append(v)
+                    for vuln in self.last_results:
+                        try:
+                            vuln_type = str(vuln.get('type', '')).encode('ascii', 'ignore').decode()
+                            pdf.set_font("Arial", "B", 12)
+                            pdf.multi_cell(0, 10, f"Type: {vuln_type}")
 
-        for vtype, items in grouped.items():
-            pdf.set_font("Arial", "B", 14)
-            pdf.cell(200, 10, f"\n{vtype}", ln=True)
-            for v in items:
-                pdf.set_font("Arial", "", 11)
-                pdf.multi_cell(0, 8, f"URL: {v.get('url', '')}")
-                for key in ["parameter", "payload", "match", "info_type", "comment", "cookie", "status_code", "ports"]:
-                    if v.get(key):
-                        if isinstance(v[key], list):
-                            pdf.multi_cell(0, 8, f"{key.capitalize()}: {', '.join(str(p) for p in v[key])}")
-                        else:
-                            pdf.multi_cell(0, 8, f"{key.capitalize()}: {v[key]}")
-                pdf.ln(4)
+                            url = str(vuln.get('url', '')).encode('ascii', 'ignore').decode()
+                            pdf.set_font("Arial", "", 11)
+                            pdf.multi_cell(0, 8, f"URL: {url}")
 
-        try:
-            pdf.output(file_path)
-            messagebox.showinfo("✅ Success", f"PDF Report saved to:\n{file_path}")
-        except Exception as e:
-            messagebox.showerror("❌ PDF Error", f"Failed to save PDF: {e}")
+                            for key in ["parameter", "payload", "info_type", "match", "cookie", "ports", "status_code", "comment"]:
+                                if key in vuln:
+                                    raw_label = key.replace("_", " ").capitalize()
+                                    raw_value = ", ".join(str(v) for v in vuln[key]) if isinstance(vuln[key], list) else str(vuln[key])
 
-    def show_cyber_tip(self):
+                                    # Ensure encoding-safe versions
+                                    label = raw_label.encode('ascii', 'ignore').decode()
+                                    value = raw_value.encode('ascii', 'ignore').decode()
+                                    pdf.multi_cell(0, 8, f"{label}: {value}")
+                            pdf.ln(5)
+                        except Exception as entry_error:
+                            print(f"[WARNING] Skipped one entry due to encoding: {entry_error}")
+
+                    pdf.output(file_path)
+                    messagebox.showinfo("✅ Success", "PDF saved successfully.")
+                except Exception as e:
+                    messagebox.showerror("❌ Error", f"PDF save failed: {e}")
+
+        else:
+            try:
+                with open(file_path, "w") as f:
+                    json.dump(self.last_results, f, indent=4)
+                messagebox.showinfo("✅ Success", "JSON saved successfully.")
+            except Exception as e:
+                messagebox.showerror("❌ Error", f"JSON save failed: {e}")
+
+    def scan_ports_only(self):
+        url = self.url_entry.get().strip()
+        if not url:
+            messagebox.showerror("⚠️ Error", "Enter a URL first.")
+            return
+
+        self.output_text.delete(1.0, tk.END)
+        self.output_text.insert(tk.END, f"\n🛠️ Scanning open ports on {url}...\n")
+        scanner = WebSecurityScanner(url)
+        scanner.scan_ports()
+
+        port_results = [v for v in scanner.vulnerabilities if v.get("type") == "Open Ports"]
+
+        self.output_text.insert(tk.END, f"\n🔌 Open Ports Found: {len(port_results)}\n")
+        for vuln in port_results:
+            self.output_text.insert(tk.END, f"🛑 Type: {vuln.get('type')}\n")
+            self.output_text.insert(tk.END, f"🌍 URL: {vuln.get('url')}\n")
+            ports = ", ".join(str(p) for p in vuln.get("ports", []))
+            self.output_text.insert(tk.END, f"📌 Ports: {ports}\n")
+            self.output_text.insert(tk.END, "━" * 80 + "\n")
+
+    def show_tips(self):
         tips = [
-            "🛡️ Use strong, unique passwords for every account.",
-            "🔍 Don't click on suspicious links.",
-            "🔒 Enable 2FA wherever possible.",
-            "🧠 Always think before you click!",
-            "💾 Back up your data regularly!",
-            "⚠️ Beware of public Wi-Fi and phishing emails."
+            "🔐 Use strong, unique passwords.",
+            "🛡️ Always validate user inputs.",
+            "📡 Use HTTPS on all endpoints.",
+            "🧪 Regularly scan for vulnerabilities.",
+            "🚪 Close unused open ports.",
+            "🔑 Enable 2FA wherever possible.",
+            "🛠️ Patch dependencies often.",
+            "🕵️ Monitor logs for anomalies.",
+            "📧 Avoid phishing — verify links."
         ]
-        messagebox.showinfo("💡 Cyber Tip", random.choice(tips))
+        messagebox.showinfo("💡 Cybersecurity Tip", random.choice(tips))
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = ScannerApp(root)
+    app = BugFinderGUI(root)
     root.mainloop()

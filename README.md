@@ -67,6 +67,8 @@ bug/
 ├── gui.py               # GUI application (main entry)
 ├── scanner.py           # Scanner logic
 ├── README.md            # This file
+├── requirements.txt     # Contains all requuirements
+├── BugFinder.spec       # Optional
 ```
 
 ---

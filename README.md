@@ -15,7 +15,7 @@
   * Command Injection
   * Sensitive Information Exposure (emails, API keys) and etc..
 * 🎛️ **Graphical Interface** using `tkinter`
-* 📂 **Result Export** to pdf
+* 📂 **Result Export** to pdf or json
 * 🧮 Live Filtering by vulnerability type
 * 🧠 Multithreaded scanning for faster results
 
@@ -38,7 +38,7 @@ cd bug-finder
 pip install -r requirements.txt
 ```
 
-> Required modules: `requests`, `beautifulsoup4`, `colorama`
+> Required modules: `requests`, `beautifulsoup4`, `colorama`, `fpdf`
 
 3. **Run the GUI Application**
 
@@ -66,8 +66,6 @@ python gui.py
 bug/
 ├── gui.py               # GUI application (main entry)
 ├── scanner.py           # Scanner logic
-├── bug.ico              # Icon for the app
-├── BugFinder.spec       # Optional PyInstaller spec file
 ├── README.md            # This file
 ```
 
